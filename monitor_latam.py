@@ -19,34 +19,36 @@ VOOS = [
 ]
 
 def extrair_preco_reais(html):
-    """
-    Extrai o preço FINAL em BRL (por passageiro, com taxas e impostos)
-    Exemplo esperado no HTML:
-    BRL 595,77
-    Por passageiro
-    Inclui taxas e impostos
-    """
-    texto = BeautifulSoup(html, "html.parser").get_text(" ", strip=True)
-    texto = re.sub(r"\s+", " ", texto)
+    soup = BeautifulSoup(html, "html.parser")
+    texto = soup.get_text(" ", strip=True)
 
-    padrao = re.compile(
-        r"(BRL\s?\d{1,3}(\.\d{3})*,\d{2}).{0,80}?Por passageiro.{0,80}?Inclui taxas e impostos",
-        re.IGNORECASE
-    )
+    # 🔍 Debug bruto
+    print("---- TEXTO EXTRAÍDO (início) ----")
+    print(texto[:500])
+    print("---- TEXTO EXTRAÍDO (fim) ----\n")
 
-    match = padrao.search(texto)
-    if not match:
-        return None
+    # Captura QUALQUER valor BRL xxx,xx
+    padrao = re.compile(r"BRL\s?\d{1,3}(\.\d{3})*,\d{2}", re.IGNORECASE)
 
-    valor_txt = match.group(1)
-    valor = (
-        valor_txt.replace("BRL", "")
-        .replace(".", "")
-        .replace(",", ".")
-        .strip()
-    )
+    valores = []
+    for match in re.finditer(padrao, texto):
+        bruto = match.group()
+        valor = (
+            bruto.replace("BRL", "")
+            .replace(".", "")
+            .replace(",", ".")
+            .strip()
+        )
+        try:
+            valores.append(float(valor))
+        except:
+            pass
 
-    return float(valor)
+    print(f"💰 Valores BRL encontrados: {valores}")
+
+    # Regra prática LATAM:
+    # menor BRL visível = preço por passageiro
+    return min(valores) if valores else None
 
 def enviar_telegram(msg):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -62,12 +64,17 @@ def enviar_telegram(msg):
 mensagem = "✈️ VALORES ATUAIS — LATAM (REAI$)\n\n"
 
 for voo in VOOS:
+    print(f"\n🔎 Consultando: {voo['nome']}")
     r = requests.get(voo["url"], timeout=30)
+
     preco = extrair_preco_reais(r.text)
 
     if preco is None:
+        print("❌ Preço não encontrado\n")
         mensagem += f"{voo['nome']}\n❌ Preço não encontrado\n\n"
         continue
+
+    print(f"✅ Preço encontrado: BRL {preco:.2f}")
 
     hash_atual = hashlib.md5(str(preco).encode()).hexdigest()
     arquivo = f"{voo['nome']}.txt"
@@ -89,5 +96,5 @@ for voo in VOOS:
         with open(arquivo, "w") as f:
             f.write(hash_atual)
 
-# SEMPRE envia
+# 📩 Sempre envia
 enviar_telegram(mensagem)
