@@ -33,8 +33,8 @@ def get_latam_price():
             return f"Erro ao capturar preço: {str(e)}"
 
 def send_telegram(message):
-    token = os.environ['TELEGRAM_TOKEN']
-    chat_id = os.environ['TELEGRAM_CHAT_ID']
+    token = os.environ['TG_TOKEN']
+    chat_id = os.environ['TG_CHAT_ID']
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {"chat_id": chat_id, "text": message}
     requests.post(url, json=payload)
