@@ -16,12 +16,12 @@ HEADERS = {
 VOOS = [
     {
         "nome": "IDA BSB → POA",
-        "url": "https://www.latamairlines.com/br/pt/ofertas-voos?origin=BSB&destination=POA&outbound=2026-10-14&adult=1",
+        "url": "https://www.latamairlines.com/br/pt/oferta-voos?origin=BSB&destination=POA&outbound=2026-10-14&adt=1&chd=0&inf=0&cabin=Economy&redemption=false",
         "horario": "09:30"
     },
     {
         "nome": "VOLTA POA → BSB",
-        "url": "https://www.latamairlines.com/br/pt/ofertas-voos?origin=POA&destination=BSB&outbound=2026-10-24&adult=1",
+        "url": "https://www.latamairlines.com/br/pt/oferta-voos?origin=POA&destination=BSB&outbound=2026-10-24&adt=1&chd=0&inf=0&cabin=Economy&redemption=false",
         "horario": "17:25"
     }
 ]
