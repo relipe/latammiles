@@ -31,19 +31,44 @@ VOOS = [
 # =========================
 def buscar_preco(url):
     print(f"\n🔍 Acessando: {url}")
+
     r = requests.get(url, headers=HEADERS, timeout=30)
-    r.raise_for_status()
+
+    print("HTTP STATUS:", r.status_code)
+
+    html = r.text.lower()
+
+    # 🚨 Detecta bloqueio da LATAM
+    if "access denied" in html or "for security reasons" in html:
+        print("🚫 BLOQUEIO DE SEGURANÇA DA LATAM")
+        return "bloqueado pela latam"
 
     soup = BeautifulSoup(r.text, "html.parser")
 
-    spans = soup.find_all("span")
+    # 🎯 Tentativa 1 — seletor específico (mais confiável)
+    spans = soup.select("span[class*='currencyamount']")
+
+    valores = []
+
     for span in spans:
         texto = span.get_text(strip=True).lower()
-        if texto.startswith("brl"):
-            print(f"✅ Preço encontrado no HTML: {texto}")
-            return texto
+        print("🔎 Span encontrado:", texto)
 
-    print("❌ Nenhum preço encontrado no HTML")
+        match = re.search(r"brl\s*\d{1,3}(\.\d{3})*,\d{2}", texto)
+        if match:
+            valores.append(match.group())
+
+    # 🎯 Tentativa 2 — fallback geral (regex no HTML inteiro)
+    if not valores:
+        print("⚠️ Fallback: buscando no HTML inteiro")
+        matches = re.findall(r"brl\s*\d{1,3}(\.\d{3})*,\d{2}", html)
+        valores.extend(matches)
+
+    if valores:
+        print(f"✅ Preço encontrado: {valores[0]}")
+        return valores[0]
+
+    print("❌ Nenhum preço encontrado")
     return "preço não encontrado"
 
 
