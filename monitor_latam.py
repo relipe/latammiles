@@ -48,9 +48,9 @@ def buscar_preco(url):
 
 
 def enviar_telegram(mensagem):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
+        "chat_id": CHAT_ID,
         "text": mensagem
     }
     r = requests.post(url, json=payload)
