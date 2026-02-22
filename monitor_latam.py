@@ -53,9 +53,6 @@ for voo in VOOS:
     response = requests.get(voo["url"], timeout=30)
     milhas = extrair_milhas(response.text)
 
-    if milhas is None:
-        continue
-
     hash_atual = hashlib.md5(str(milhas).encode()).hexdigest()
     arquivo = f"{voo['nome']}.txt"
 
@@ -65,11 +62,9 @@ for voo in VOOS:
     except FileNotFoundError:
         hash_antigo = ""
 
-    if hash_atual != hash_antigo:
         mudou = True
         mensagem_alerta += f"{voo['nome']}\n💺 {milhas:,} milhas\n\n"
         with open(arquivo, "w") as f:
             f.write(hash_atual)
 
-if mudou:
     enviar_telegram("🚨 ALTERAÇÃO DE MILHAS LATAM\n\n" + mensagem_alerta)
