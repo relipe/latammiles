@@ -24,6 +24,6 @@ jobs:
 
       - name: Executar Script
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TG_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TG_CHAT }}
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT: ${{ secrets.TG_CHAT }}
         run: python monitor_latam.py
