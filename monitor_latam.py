@@ -6,8 +6,8 @@ import datetime
 # =========================
 # CONFIGURAÇÕES
 # =========================
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+BOT_TOKEN = os.environ["TG_TOKEN"]
+CHAT_ID = os.environ["TG_CHAT"]
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
