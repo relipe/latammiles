@@ -1,13 +1,12 @@
 import requests
 import hashlib
 import os
+import re
 from bs4 import BeautifulSoup
 
-# Variáveis vindas dos Secrets do GitHub
 BOT_TOKEN = os.environ["TG_TOKEN"]
 CHAT_ID = os.environ["TG_CHAT"]
 
-# Voos monitorados
 VOOS = [
     {
         "nome": "✈️ IDA LA3432 (14/10/2026 BSB → POA)",
@@ -19,52 +18,76 @@ VOOS = [
     }
 ]
 
-def extrair_milhas(html):
+def extrair_preco_reais(html):
     """
-    Extrai possíveis valores numéricos do HTML
-    e retorna o MENOR valor encontrado (normalmente o de milhas).
+    Extrai o preço FINAL em BRL (por passageiro, com taxas e impostos)
+    Exemplo esperado no HTML:
+    BRL 595,77
+    Por passageiro
+    Inclui taxas e impostos
     """
-    soup = BeautifulSoup(html, "html.parser")
-    texto = soup.get_text(" ", strip=True)
+    texto = BeautifulSoup(html, "html.parser").get_text(" ", strip=True)
+    texto = re.sub(r"\s+", " ", texto)
 
-    candidatos = []
-    for palavra in texto.split():
-        p = palavra.replace(".", "").replace(",", "")
-        if p.isdigit() and len(p) >= 4:
-            candidatos.append(int(p))
+    padrao = re.compile(
+        r"(BRL\s?\d{1,3}(\.\d{3})*,\d{2}).{0,80}?Por passageiro.{0,80}?Inclui taxas e impostos",
+        re.IGNORECASE
+    )
 
-    return min(candidatos) if candidatos else None
+    match = padrao.search(texto)
+    if not match:
+        return None
 
-def enviar_telegram(mensagem):
+    valor_txt = match.group(1)
+    valor = (
+        valor_txt.replace("BRL", "")
+        .replace(".", "")
+        .replace(",", ".")
+        .strip()
+    )
+
+    return float(valor)
+
+def enviar_telegram(msg):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     requests.post(
         url,
         data={
             "chat_id": CHAT_ID,
-            "text": mensagem
+            "text": msg
         },
-        timeout=20
+        timeout=10
     )
 
-mensagem_alerta = ""
-mudou = True
+mensagem = "✈️ VALORES ATUAIS — LATAM (REAI$)\n\n"
 
 for voo in VOOS:
-    response = requests.get(voo["url"], timeout=30)
-    milhas = extrair_milhas(response.text)
+    r = requests.get(voo["url"], timeout=30)
+    preco = extrair_preco_reais(r.text)
 
-    hash_atual = hashlib.md5(str(milhas).encode()).hexdigest()
+    if preco is None:
+        mensagem += f"{voo['nome']}\n❌ Preço não encontrado\n\n"
+        continue
+
+    hash_atual = hashlib.md5(str(preco).encode()).hexdigest()
     arquivo = f"{voo['nome']}.txt"
 
     try:
         with open(arquivo, "r") as f:
             hash_antigo = f.read()
-    except FileNotFoundError:
+    except:
         hash_antigo = ""
 
-        mudou = True
-        mensagem_alerta += f"{voo['nome']}\n💺 {milhas:,} milhas\n\n"
+    status = "🔺 ALTEROU" if hash_atual != hash_antigo else "— sem alteração"
+
+    mensagem += (
+        f"{voo['nome']}\n"
+        f"💰 BRL {preco:,.2f} ({status})\n\n"
+    )
+
+    if hash_atual != hash_antigo:
         with open(arquivo, "w") as f:
             f.write(hash_atual)
 
-    enviar_telegram("🚨 ALTERAÇÃO DE MILHAS LATAM\n\n" + mensagem_alerta)
+# SEMPRE envia
+enviar_telegram(mensagem)
