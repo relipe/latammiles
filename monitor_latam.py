@@ -1,100 +1,86 @@
 import requests
-import hashlib
-import os
-import re
 from bs4 import BeautifulSoup
+import os
+import datetime
 
-BOT_TOKEN = os.environ["TG_TOKEN"]
-CHAT_ID = os.environ["TG_CHAT"]
+# =========================
+# CONFIGURAÇÕES
+# =========================
+TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+}
 
 VOOS = [
     {
-        "nome": "✈️ IDA LA3432 (14/10/2026 BSB → POA)",
-        "url": "https://www.latamairlines.com/br/pt/oferta-voos?origin=BSB&destination=POA&outbound=2026-10-14&adt=1&chd=0&inf=0&cabin=Economy&redemption=false"
+        "nome": "IDA BSB → POA",
+        "url": "https://www.latamairlines.com/br/pt/ofertas-voos?origin=BSB&destination=POA&outbound=2026-10-14&adult=1",
+        "horario": "09:30"
     },
     {
-        "nome": "↩️ VOLTA LA3225 (24/10/2026 POA → BSB)",
-        "url": "https://www.latamairlines.com/br/pt/oferta-voos?origin=POA&destination=BSB&outbound=2026-10-24&adt=1&chd=0&inf=0&cabin=Economy&redemption=false"
+        "nome": "VOLTA POA → BSB",
+        "url": "https://www.latamairlines.com/br/pt/ofertas-voos?origin=POA&destination=BSB&outbound=2026-10-24&adult=1",
+        "horario": "17:25"
     }
 ]
 
-def extrair_preco_reais(html):
-    soup = BeautifulSoup(html, "html.parser")
-    texto = soup.get_text(" ", strip=True)
+# =========================
+# FUNÇÕES
+# =========================
+def buscar_preco(url):
+    print(f"\n🔍 Acessando: {url}")
+    r = requests.get(url, headers=HEADERS, timeout=30)
+    r.raise_for_status()
 
-    # 🔍 Debug bruto
-    print("---- TEXTO EXTRAÍDO (início) ----")
-    print(texto[:500])
-    print("---- TEXTO EXTRAÍDO (fim) ----\n")
+    soup = BeautifulSoup(r.text, "html.parser")
 
-    # Captura QUALQUER valor BRL xxx,xx
-    padrao = re.compile(r"BRL\s?\d{1,3}(\.\d{3})*,\d{2}", re.IGNORECASE)
+    spans = soup.find_all("span")
+    for span in spans:
+        texto = span.get_text(strip=True).lower()
+        if texto.startswith("brl"):
+            print(f"✅ Preço encontrado no HTML: {texto}")
+            return texto
 
-    valores = []
-    for match in re.finditer(padrao, texto):
-        bruto = match.group()
-        valor = (
-            bruto.replace("BRL", "")
-            .replace(".", "")
-            .replace(",", ".")
-            .strip()
+    print("❌ Nenhum preço encontrado no HTML")
+    return "preço não encontrado"
+
+
+def enviar_telegram(mensagem):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": mensagem
+    }
+    r = requests.post(url, json=payload)
+    r.raise_for_status()
+
+
+# =========================
+# EXECUÇÃO
+# =========================
+def main():
+    agora = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    mensagens = [f"✈️ Monitor LATAM\n🕒 {agora}\n"]
+
+    for voo in VOOS:
+        preco = buscar_preco(voo["url"])
+
+        mensagens.append(
+            f"{voo['nome']}\n"
+            f"Horário: {voo['horario']}\n"
+            f"Preço: {preco}\n"
         )
-        try:
-            valores.append(float(valor))
-        except:
-            pass
 
-    print(f"💰 Valores BRL encontrados: {valores}")
+    mensagem_final = "\n".join(mensagens)
 
-    # Regra prática LATAM:
-    # menor BRL visível = preço por passageiro
-    return min(valores) if valores else None
+    print("\n📤 Enviando mensagem para o Telegram:")
+    print(mensagem_final)
 
-def enviar_telegram(msg):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    requests.post(
-        url,
-        data={
-            "chat_id": CHAT_ID,
-            "text": msg
-        },
-        timeout=10
-    )
+    enviar_telegram(mensagem_final)
 
-mensagem = "✈️ VALORES ATUAIS — LATAM (REAI$)\n\n"
 
-for voo in VOOS:
-    print(f"\n🔎 Consultando: {voo['nome']}")
-    r = requests.get(voo["url"], timeout=30)
-
-    preco = extrair_preco_reais(r.text)
-
-    if preco is None:
-        print("❌ Preço não encontrado\n")
-        mensagem += f"{voo['nome']}\n❌ Preço não encontrado\n\n"
-        continue
-
-    print(f"✅ Preço encontrado: BRL {preco:.2f}")
-
-    hash_atual = hashlib.md5(str(preco).encode()).hexdigest()
-    arquivo = f"{voo['nome']}.txt"
-
-    try:
-        with open(arquivo, "r") as f:
-            hash_antigo = f.read()
-    except:
-        hash_antigo = ""
-
-    status = "🔺 ALTEROU" if hash_atual != hash_antigo else "— sem alteração"
-
-    mensagem += (
-        f"{voo['nome']}\n"
-        f"💰 BRL {preco:,.2f} ({status})\n\n"
-    )
-
-    if hash_atual != hash_antigo:
-        with open(arquivo, "w") as f:
-            f.write(hash_atual)
-
-# 📩 Sempre envia
-enviar_telegram(mensagem)
+if __name__ == "__main__":
+    main()
