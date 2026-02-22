@@ -3,9 +3,11 @@ import hashlib
 import os
 from bs4 import BeautifulSoup
 
+# Variáveis vindas dos Secrets do GitHub
 BOT_TOKEN = os.environ["TG_TOKEN"]
 CHAT_ID = os.environ["TG_CHAT"]
 
+# Voos monitorados
 VOOS = [
     {
         "nome": "✈️ IDA LA3432 (14/10/2026 BSB → POA)",
@@ -18,28 +20,38 @@ VOOS = [
 ]
 
 def extrair_milhas(html):
+    """
+    Extrai possíveis valores numéricos do HTML
+    e retorna o MENOR valor encontrado (normalmente o de milhas).
+    """
     soup = BeautifulSoup(html, "html.parser")
     texto = soup.get_text(" ", strip=True)
+
     candidatos = []
     for palavra in texto.split():
         p = palavra.replace(".", "").replace(",", "")
         if p.isdigit() and len(p) >= 4:
             candidatos.append(int(p))
+
     return min(candidatos) if candidatos else None
 
-def enviar_telegram(msg):
+def enviar_telegram(mensagem):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    requests.post(url, data={
-        "chat_id": CHAT_ID,
-        "text": msg
-    })
+    requests.post(
+        url,
+        data={
+            "chat_id": CHAT_ID,
+            "text": mensagem
+        },
+        timeout=20
+    )
 
-mensagem = ""
+mensagem_alerta = ""
 mudou = False
 
 for voo in VOOS:
-    r = requests.get(voo["url"], timeout=30)
-    milhas = extrair_milhas(r.text)
+    response = requests.get(voo["url"], timeout=30)
+    milhas = extrair_milhas(response.text)
 
     if milhas is None:
         continue
@@ -50,14 +62,14 @@ for voo in VOOS:
     try:
         with open(arquivo, "r") as f:
             hash_antigo = f.read()
-    except:
+    except FileNotFoundError:
         hash_antigo = ""
 
     if hash_atual != hash_antigo:
         mudou = True
-        mensagem += f"{voo['nome']}\n💺 {milhas:,} milhas\n\n"
+        mensagem_alerta += f"{voo['nome']}\n💺 {milhas:,} milhas\n\n"
         with open(arquivo, "w") as f:
             f.write(hash_atual)
 
 if mudou:
-    enviar_telegram("🚨 ALTERAÇÃO DE MILHAS LATAM\n\n" + mensagem)
+    enviar_telegram("🚨 ALTERAÇÃO DE MILHAS LATAM\n\n" + mensagem_alerta)
