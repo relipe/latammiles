@@ -11,11 +11,11 @@ CHAT_ID = os.environ["TG_CHAT"]
 VOOS = [
     {
         "nome": "✈️ IDA LA3432 (14/10/2026 BSB → POA)",
-        "url": "https://www.latamairlines.com/br/pt/oferta-voos?origin=BSB&destination=POA&outbound=2026-10-14&adt=1&chd=0&inf=0&cabin=Economy&redemption=true"
+        "url": "https://www.latamairlines.com/br/pt/oferta-voos?origin=BSB&destination=POA&outbound=2026-10-14&adt=1&chd=0&inf=0&cabin=Economy&redemption=false"
     },
     {
         "nome": "↩️ VOLTA LA3225 (24/10/2026 POA → BSB)",
-        "url": "https://www.latamairlines.com/br/pt/oferta-voos?origin=POA&destination=BSB&outbound=2026-10-24&adt=1&chd=0&inf=0&cabin=Economy&redemption=true"
+        "url": "https://www.latamairlines.com/br/pt/oferta-voos?origin=POA&destination=BSB&outbound=2026-10-24&adt=1&chd=0&inf=0&cabin=Economy&redemption=false"
     }
 ]
 
@@ -47,7 +47,7 @@ def enviar_telegram(mensagem):
     )
 
 mensagem_alerta = ""
-mudou = False
+mudou = True
 
 for voo in VOOS:
     response = requests.get(voo["url"], timeout=30)
