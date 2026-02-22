@@ -38,38 +38,22 @@ def buscar_preco(url):
 
     html = r.text.lower()
 
-    # 🚨 Detecta bloqueio da LATAM
+    # 🚨 Detecta bloqueio explícito
     if "access denied" in html or "for security reasons" in html:
         print("🚫 BLOQUEIO DE SEGURANÇA DA LATAM")
-        return "bloqueado pela latam"
+        return "BLOQUEADO (Access Denied)"
 
     soup = BeautifulSoup(r.text, "html.parser")
 
-    # 🎯 Tentativa 1 — seletor específico (mais confiável)
-    spans = soup.select("span[class*='currencyamount']")
+    # 🔍 Extrai TODO o texto visível da página
+    texto_completo = soup.get_text(separator="\n", strip=True)
 
-    valores = []
+    print("\n===== INÍCIO DO CONTEÚDO DA PÁGINA =====\n")
+    print(texto_completo[:5000])  # limita para não explodir o console
+    print("\n===== FIM DO CONTEÚDO DA PÁGINA =====\n")
 
-    for span in spans:
-        texto = span.get_text(strip=True).lower()
-        print("🔎 Span encontrado:", texto)
-
-        match = re.search(r"brl\s*\d{1,3}(\.\d{3})*,\d{2}", texto)
-        if match:
-            valores.append(match.group())
-
-    # 🎯 Tentativa 2 — fallback geral (regex no HTML inteiro)
-    if not valores:
-        print("⚠️ Fallback: buscando no HTML inteiro")
-        matches = re.findall(r"brl\s*\d{1,3}(\.\d{3})*,\d{2}", html)
-        valores.extend(matches)
-
-    if valores:
-        print(f"✅ Preço encontrado: {valores[0]}")
-        return valores[0]
-
-    print("❌ Nenhum preço encontrado")
-    return "preço não encontrado"
+    # Retorna um resumo para o Telegram
+    return "Conteúdo capturado (ver console)"
 
 
 def enviar_telegram(mensagem):
