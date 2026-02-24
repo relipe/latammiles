@@ -11,101 +11,65 @@ BOT_TOKEN = os.environ["TG_TOKEN"]
 CHAT_ID = os.environ["TG_CHAT"]
 
 # =========================
-# VOOS
+# URLS
 # =========================
-VOOS = [
+URLS = [
     {
         "nome": "IDA BSB → POA",
-        "url": "https://www.latamairlines.com/br/pt/oferta-voos?origin=BSB&destination=POA&outbound=2026-10-14&adt=1&chd=0&inf=0&cabin=Economy&redemption=false",
-        "horario": "09:30"
+        "url": "https://www.latamairlines.com/br/pt/oferta-voos?origin=BSB&destination=POA&outbound=2026-10-14&adt=1&chd=0&inf=0&cabin=Economy&redemption=false"
     },
     {
         "nome": "VOLTA POA → BSB",
-        "url": "https://www.latamairlines.com/br/pt/oferta-voos?origin=POA&destination=BSB&outbound=2026-10-24&adt=1&chd=0&inf=0&cabin=Economy&redemption=false",
-        "horario": "17:25"
+        "url": "https://www.latamairlines.com/br/pt/oferta-voos?origin=POA&destination=BSB&outbound=2026-10-24&adt=1&chd=0&inf=0&cabin=Economy&redemption=false"
     }
 ]
 
 # =========================
 # TELEGRAM
 # =========================
-def enviar_telegram(msg: str):
+def enviar_telegram(msg):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": CHAT_ID, "text": msg}, timeout=30)
+    requests.post(
+        url,
+        json={"chat_id": CHAT_ID, "text": msg},
+        timeout=30
+    )
 
 # =========================
-# UTIL
+# DUMP XHR SEM FILTRO
 # =========================
-def normalizar_hora(iso_dt: str):
-    # ex: 2026-10-14T09:30:00-03:00 -> 09:30
-    if not iso_dt or "T" not in iso_dt:
-        return None
-    return iso_dt.split("T")[1][:5]
-
-def print_json_preview(obj, limit=1500):
-    txt = json.dumps(obj, ensure_ascii=False)
-    print(txt[:limit] + ("..." if len(txt) > limit else ""))
-
-# =========================
-# CAPTURA VIA XHR
-# =========================
-def capturar_voos_por_xhr(url, horario_desejado):
-    resultados = []
+def dump_xhr(url, nome):
+    capturados = []
 
     def on_response(resp):
         try:
             if resp.request.resource_type not in ("xhr", "fetch"):
                 return
-            if resp.status != 200:
-                return
 
-            data = resp.json()  # pode lançar exceção
-            print("\n📦 XHR JSON detectado:")
-            print(f"➡️ {resp.url}")
-            print_json_preview(data)
+            print("\n==============================")
+            print(f"📦 XHR CAPTURADO ({nome})")
+            print(f"URL: {resp.url}")
+            print(f"STATUS: {resp.status}")
 
-            # Heurística flexível para encontrar ofertas/segmentos
-            # Tentamos caminhos comuns sem depender de um schema rígido
-            def walk(obj):
-                if isinstance(obj, dict):
-                    # possíveis campos de preço
-                    price = None
-                    currency = None
-                    if "price" in obj and isinstance(obj["price"], (int, float, dict)):
-                        price = obj["price"]
-                    if "currency" in obj:
-                        currency = obj["currency"]
+            try:
+                data = resp.json()
+                texto = json.dumps(data, ensure_ascii=False)
+                print(texto[:3000])
+                capturados.append(
+                    f"URL: {resp.url}\n{texto[:1500]}"
+                )
+            except Exception:
+                print("⚠️ Resposta não é JSON")
 
-                    # possíveis segmentos
-                    if "segments" in obj and isinstance(obj["segments"], list):
-                        for seg in obj["segments"]:
-                            dep = seg.get("departure") or seg.get("departureDateTime") or seg.get("departureDate")
-                            h = normalizar_hora(dep) if isinstance(dep, str) else None
-                            if h == horario_desejado:
-                                resultados.append({
-                                    "horario": h,
-                                    "price": price,
-                                    "currency": currency,
-                                    "raw": obj
-                                })
-
-                    for v in obj.values():
-                        walk(v)
-
-                elif isinstance(obj, list):
-                    for i in obj:
-                        walk(i)
-
-            walk(data)
-
-        except Exception:
-            pass  # silencioso: nem toda XHR é JSON de oferta
+        except Exception as e:
+            print("Erro ao processar XHR:", e)
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
             args=["--disable-blink-features=AutomationControlled"]
         )
+
         context = browser.new_context(
             locale="pt-BR",
             user_agent=(
@@ -114,56 +78,47 @@ def capturar_voos_por_xhr(url, horario_desejado):
                 "Chrome/120.0.0.0 Safari/537.36"
             )
         )
+
         page = context.new_page()
         page.on("response", on_response)
 
-        print(f"\n🔍 Acessando (browser real): {url}")
+        print(f"\n🔍 Acessando {nome}")
         page.goto(url, timeout=60000)
-        page.wait_for_timeout(20000)  # aguarda XHRs
+        page.wait_for_timeout(20000)
 
         browser.close()
 
-    return resultados
+    return capturados
 
 # =========================
 # MAIN
 # =========================
 def main():
-    agora = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    agora = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
-    linhas = [
-        "✈️ Monitor LATAM (XHR)",
+    resumo = [
+        "✈️ Monitor LATAM — DUMP XHR",
         f"🕒 {agora}",
         ""
     ]
 
-    for voo in VOOS:
-        print(f"\n==== {voo['nome']} | Horário alvo: {voo['horario']} ====")
-        encontrados = capturar_voos_por_xhr(voo["url"], voo["horario"])
+    for item in URLS:
+        dumps = dump_xhr(item["url"], item["nome"])
 
-        if not encontrados:
-            linhas.append(f"{voo['nome']}")
-            linhas.append(f"Horário {voo['horario']} não encontrado")
-            linhas.append("")
-            continue
-
-        # agrega o primeiro encontrado (normalmente há duplicatas)
-        item = encontrados[0]
-        preco = item.get("price")
-        moeda = item.get("currency")
-
-        linhas.append(f"{voo['nome']}")
-        linhas.append(f"Horário: {item['horario']}")
-        if isinstance(preco, dict):
-            linhas.append(f"Preço: {json.dumps(preco, ensure_ascii=False)}")
+        resumo.append(f"🔍 {item['nome']}")
+        if not dumps:
+            resumo.append("Nenhum XHR JSON capturado")
         else:
-            linhas.append(f"Preço: {preco} {moeda or ''}".strip())
-        linhas.append("")
+            resumo.append(f"{len(dumps)} XHR JSON capturados")
+            resumo.append(dumps[0][:1200])  # só o primeiro no Telegram
+        resumo.append("-" * 30)
 
-    msg = "\n".join(linhas)
-    print("\n===== RESUMO =====\n")
-    print(msg)
-    enviar_telegram(msg)
+    mensagem = "\n".join(resumo)
+
+    print("\n===== RESUMO TELEGRAM =====\n")
+    print(mensagem)
+
+    enviar_telegram(mensagem)
 
 if __name__ == "__main__":
     main()
