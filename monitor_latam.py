@@ -4,9 +4,6 @@ from playwright.sync_api import sync_playwright
 from datetime import datetime
 import sys
 
-BOT_TOKEN = os.environ["TG_TOKEN"]
-CHAT_ID = os.environ["TG_CHAT"]
-
 # ==============================
 # CONFIGURAÇÃO DOS VOOS
 # ==============================
