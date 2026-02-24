@@ -1,18 +1,7 @@
-import os
 import json
-import datetime
-import requests
+import zlib
 from playwright.sync_api import sync_playwright
 
-# =========================
-# TELEGRAM (NÃO ALTERAR)
-# =========================
-BOT_TOKEN = os.environ["TG_TOKEN"]
-CHAT_ID = os.environ["TG_CHAT"]
-
-# =========================
-# URLS
-# =========================
 URLS = [
     {
         "nome": "IDA BSB → POA",
@@ -24,52 +13,31 @@ URLS = [
     }
 ]
 
-# =========================
-# TELEGRAM
-# =========================
-def enviar_telegram(msg):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    requests.post(
-        url,
-        json={"chat_id": CHAT_ID, "text": msg},
-        timeout=30
-    )
-
-# =========================
-# DUMP XHR SEM FILTRO
-# =========================
-def dump_xhr(url, nome):
-    capturados = []
-
-    def on_response(resp):
+def try_decode_response(resp):
+    """
+    Tenta obter o corpo da resposta como texto:
+    - tenta text()
+    - se falhar, tenta buffer() e descompactar
+    """
+    try:
+        return resp.text()
+    except Exception:
         try:
-            if resp.request.resource_type not in ("xhr", "fetch"):
-                return
-
-            print("\n==============================")
-            print(f"📦 XHR CAPTURADO ({nome})")
-            print(f"URL: {resp.url}")
-            print(f"STATUS: {resp.status}")
-
+            buf = resp.body()
+            # tenta zlib (caso gzip/deflate)
             try:
-                data = resp.json()
-                texto = json.dumps(data, ensure_ascii=False)
-                print(texto[:3000])
-                capturados.append(
-                    f"URL: {resp.url}\n{texto[:1500]}"
-                )
+                return zlib.decompress(buf, zlib.MAX_WBITS | 32).decode("utf-8", errors="ignore")
             except Exception:
-                print("⚠️ Resposta não é JSON")
+                return buf[:4000].decode("utf-8", errors="ignore")
+        except Exception:
+            return "<não foi possível ler o corpo>"
 
-        except Exception as e:
-            print("Erro ao processar XHR:", e)
-
+def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
             args=["--disable-blink-features=AutomationControlled"]
         )
-
         context = browser.new_context(
             locale="pt-BR",
             user_agent=(
@@ -80,45 +48,69 @@ def dump_xhr(url, nome):
         )
 
         page = context.new_page()
+
+        # --------- CAPTURA DE REQUESTS ----------
+        def on_request(req):
+            try:
+                if req.method != "POST":
+                    return
+
+                headers = req.headers
+                ct = headers.get("content-type", "").lower()
+
+                # Logamos TODO POST (GraphQL, binário, etc.)
+                print("\n================ REQUEST POST =================")
+                print(f"URL: {req.url}")
+                print(f"Content-Type: {ct}")
+                print("Headers:")
+                for k, v in headers.items():
+                    print(f"  {k}: {v}")
+
+                body = req.post_data
+                if body:
+                    print("\n--- BODY (request) ---")
+                    print(body[:4000])
+                else:
+                    print("\n--- BODY (request) --- vazio")
+
+            except Exception as e:
+                print("Erro ao capturar request:", e)
+
+        # --------- CAPTURA DE RESPONSES ----------
+        def on_response(resp):
+            try:
+                req = resp.request
+                if req.method != "POST":
+                    return
+
+                headers = resp.headers
+                ct = headers.get("content-type", "").lower()
+
+                print("\n================ RESPONSE =====================")
+                print(f"URL: {resp.url}")
+                print(f"STATUS: {resp.status}")
+                print(f"Content-Type: {ct}")
+                print("Headers:")
+                for k, v in headers.items():
+                    print(f"  {k}: {v}")
+
+                body_txt = try_decode_response(resp)
+                print("\n--- BODY (response) ---")
+                print(body_txt[:6000])
+
+            except Exception as e:
+                print("Erro ao capturar response:", e)
+
+        page.on("request", on_request)
         page.on("response", on_response)
 
-        print(f"\n🔍 Acessando {nome}")
-        page.goto(url, timeout=60000)
-        page.wait_for_timeout(20000)
+        for item in URLS:
+            print(f"\n\n🔍 Acessando {item['nome']}")
+            print(item["url"])
+            page.goto(item["url"], timeout=60000)
+            page.wait_for_timeout(25000)  # aguarda chamadas de rede
 
         browser.close()
-
-    return capturados
-
-# =========================
-# MAIN
-# =========================
-def main():
-    agora = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-
-    resumo = [
-        "✈️ Monitor LATAM — DUMP XHR",
-        f"🕒 {agora}",
-        ""
-    ]
-
-    for item in URLS:
-        dumps = dump_xhr(item["url"], item["nome"])
-
-        resumo.append(f"🔍 {item['nome']}")
-        if not dumps:
-            resumo.append("Nenhum XHR JSON capturado")
-        else:
-            resumo.append(f"{len(dumps)} XHR JSON capturados")
-            resumo.append(dumps[0][:1200])  # só o primeiro no Telegram
-        resumo.append("-" * 30)
-
-    mensagem = "\n".join(resumo)
-
-    print("\n===== RESUMO TELEGRAM =====\n")
-    print(mensagem)
-
-    enviar_telegram(mensagem)
 
 if __name__ == "__main__":
     main()
