@@ -15,9 +15,8 @@ URLS = [
 ]
 
 async def main():
-    timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    print(f"\n✈️ Monitor LATAM — GRAPHQL DUMP")
-    print(f"🕒 {timestamp}\n")
+    print("\n✈️ Monitor LATAM — GRAPHQL DUMP")
+    print("🕒", datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
 
     captured = []
 
@@ -25,9 +24,9 @@ async def main():
         browser = await p.chromium.launch(
             headless=True,
             args=[
-                "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
-                "--disable-dev-shm-usage"
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled"
             ]
         )
 
@@ -44,13 +43,13 @@ async def main():
 
         async def on_response(response):
             try:
-                if "application/json" in response.headers.get("content-type", ""):
+                ct = response.headers.get("content-type", "")
+                if "application/json" in ct:
                     data = await response.json()
                     captured.append({
                         "url": response.url,
                         "status": response.status,
-                        "method": response.request.method,
-                        "response": data
+                        "data": data
                     })
             except:
                 pass
@@ -58,22 +57,15 @@ async def main():
         page.on("response", on_response)
 
         for item in URLS:
-            print(f"🔍 Acessando {item['label']}")
+            print(f"\n🔍 Acessando {item['label']}")
             print(item["url"])
 
-            await page.goto(item["url"], wait_until="domcontentloaded")
+            await page.goto(item["url"], wait_until="networkidle")
 
-            # Aguarda botão de buscar
-            await page.wait_for_timeout(3000)
+            # Interação neutra para acordar o React
+            await page.mouse.wheel(0, 800)
+            await page.wait_for_timeout(10000)
 
-            # Clica no botão "Buscar voos"
-            # (seletor robusto)
-            await page.locator("button").filter(has_text="Buscar").first.click()
-
-            # Tempo real para XHR / GraphQL
-            await page.wait_for_timeout(12000)
-
-        # Cookies reais
         cookies = await context.cookies()
         print("\n🍪 COOKIES DE SESSÃO:")
         for c in cookies:
@@ -81,15 +73,15 @@ async def main():
 
         await browser.close()
 
-    print("\n📦 JSON CAPTURADO:")
+    print("\n📦 JSON CAPTURADOS:")
     if not captured:
-        print("❌ Ainda não houve chamadas JSON")
+        print("❌ Nenhuma resposta JSON capturada")
     else:
         for i, c in enumerate(captured, 1):
-            print(f"\n--- REQUEST #{i} ---")
+            print(f"\n--- JSON #{i} ---")
             print("URL:", c["url"])
             print("STATUS:", c["status"])
-            print(json.dumps(c["response"], indent=2)[:6000])
+            print(json.dumps(c["data"], indent=2)[:5000])
 
 if __name__ == "__main__":
     asyncio.run(main())
