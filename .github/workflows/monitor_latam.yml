@@ -1,28 +1,29 @@
-name: Monitorar Preco LATAM
+name: Monitor LATAM
 
 on:
   schedule:
-    - cron: '0 12,0 * * *' # Roda às 12:00 e 00:00 UTC (09h e 21h Brasília)
-  workflow_dispatch:      # Botão para rodar manualmente quando quiser
+    - cron: "0 */6 * * *"   # a cada 6 horas
+  workflow_dispatch:
 
 jobs:
-  check-price:
+  run:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout código
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.11"
 
-      - name: Instalar Dependências
+      - name: Install dependencies
         run: |
-          pip install requests playwright
+          pip install -r requirements.txt
           playwright install chromium
 
-      - name: Executar Script
+      - name: Run monitor
         env:
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT: ${{ secrets.TG_CHAT }}
