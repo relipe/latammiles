@@ -1,116 +1,103 @@
+import asyncio
 import json
-import zlib
-from playwright.sync_api import sync_playwright
+from datetime import datetime
+from playwright.async_api import async_playwright
 
 URLS = [
     {
-        "nome": "IDA BSB → POA",
+        "label": "IDA BSB → POA",
         "url": "https://www.latamairlines.com/br/pt/oferta-voos?origin=BSB&destination=POA&outbound=2026-10-14&adt=1&chd=0&inf=0&cabin=Economy&redemption=false"
     },
     {
-        "nome": "VOLTA POA → BSB",
+        "label": "VOLTA POA → BSB",
         "url": "https://www.latamairlines.com/br/pt/oferta-voos?origin=POA&destination=BSB&outbound=2026-10-24&adt=1&chd=0&inf=0&cabin=Economy&redemption=false"
     }
 ]
 
-def try_decode_response(resp):
-    """
-    Tenta obter o corpo da resposta como texto:
-    - tenta text()
-    - se falhar, tenta buffer() e descompactar
-    """
-    try:
-        return resp.text()
-    except Exception:
-        try:
-            buf = resp.body()
-            # tenta zlib (caso gzip/deflate)
-            try:
-                return zlib.decompress(buf, zlib.MAX_WBITS | 32).decode("utf-8", errors="ignore")
-            except Exception:
-                return buf[:4000].decode("utf-8", errors="ignore")
-        except Exception:
-            return "<não foi possível ler o corpo>"
+async def main():
+    timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    print(f"\n✈️ Monitor LATAM — GRAPHQL DUMP")
+    print(f"🕒 {timestamp}\n")
 
-def main():
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
+    graphql_calls = []
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
             headless=True,
-            args=["--disable-blink-features=AutomationControlled"]
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage"
+            ]
         )
-        context = browser.new_context(
+
+        context = await browser.new_context(
             locale="pt-BR",
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
+                "Chrome/121.0.0.0 Safari/537.36"
             )
         )
 
-        page = context.new_page()
+        page = await context.new_page()
 
-        # --------- CAPTURA DE REQUESTS ----------
-        def on_request(req):
-            try:
-                if req.method != "POST":
-                    return
-
-                headers = req.headers
-                ct = headers.get("content-type", "").lower()
-
-                # Logamos TODO POST (GraphQL, binário, etc.)
-                print("\n================ REQUEST POST =================")
-                print(f"URL: {req.url}")
-                print(f"Content-Type: {ct}")
-                print("Headers:")
-                for k, v in headers.items():
-                    print(f"  {k}: {v}")
-
-                body = req.post_data
-                if body:
-                    print("\n--- BODY (request) ---")
-                    print(body[:4000])
-                else:
-                    print("\n--- BODY (request) --- vazio")
-
-            except Exception as e:
-                print("Erro ao capturar request:", e)
-
-        # --------- CAPTURA DE RESPONSES ----------
-        def on_response(resp):
-            try:
-                req = resp.request
-                if req.method != "POST":
-                    return
-
-                headers = resp.headers
-                ct = headers.get("content-type", "").lower()
-
-                print("\n================ RESPONSE =====================")
-                print(f"URL: {resp.url}")
-                print(f"STATUS: {resp.status}")
-                print(f"Content-Type: {ct}")
-                print("Headers:")
-                for k, v in headers.items():
-                    print(f"  {k}: {v}")
-
-                body_txt = try_decode_response(resp)
-                print("\n--- BODY (response) ---")
-                print(body_txt[:6000])
-
-            except Exception as e:
-                print("Erro ao capturar response:", e)
-
-        page.on("request", on_request)
-        page.on("response", on_response)
+        # Intercepta TODAS as respostas
+        page.on("response", lambda r: asyncio.create_task(handle_response(r, graphql_calls)))
 
         for item in URLS:
-            print(f"\n\n🔍 Acessando {item['nome']}")
+            print(f"🔍 Acessando {item['label']}")
             print(item["url"])
-            page.goto(item["url"], timeout=60000)
-            page.wait_for_timeout(25000)  # aguarda chamadas de rede
+            await page.goto(item["url"], wait_until="networkidle")
+            await asyncio.sleep(10)  # tempo real para XHR/GraphQL
 
-        browser.close()
+        # Dump cookies reais
+        cookies = await context.cookies()
+        print("\n🍪 COOKIES DE SESSÃO:")
+        for c in cookies:
+            print(f"{c['name']}={c['value'][:80]}...")
+
+        await browser.close()
+
+    # Dump GraphQL
+    print("\n📦 GRAPHQL / XHR CAPTURADOS:")
+    if not graphql_calls:
+        print("⚠️ Nenhuma chamada GraphQL/XHR JSON capturada")
+    else:
+        for i, call in enumerate(graphql_calls, 1):
+            print(f"\n--- REQUEST #{i} ---")
+            print("URL:", call["url"])
+            print("STATUS:", call["status"])
+            print("METHOD:", call["method"])
+            print("HEADERS:", json.dumps(call["headers"], indent=2))
+            print("BODY:", json.dumps(call["body"], indent=2) if call["body"] else "N/A")
+            print("RESPONSE:", json.dumps(call["response"], indent=2)[:5000])
+
+async def handle_response(response, store):
+    try:
+        url = response.url.lower()
+        headers = response.request.headers
+        method = response.request.method
+
+        # Captura qualquer JSON (sem filtro)
+        if "application/json" in response.headers.get("content-type", ""):
+            try:
+                body = response.request.post_data_json
+            except:
+                body = response.request.post_data
+
+            data = await response.json()
+
+            store.append({
+                "url": response.url,
+                "status": response.status,
+                "method": method,
+                "headers": headers,
+                "body": body,
+                "response": data
+            })
+    except:
+        pass
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
