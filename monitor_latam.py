@@ -19,7 +19,7 @@ async def main():
     print(f"\n✈️ Monitor LATAM — GRAPHQL DUMP")
     print(f"🕒 {timestamp}\n")
 
-    graphql_calls = []
+    captured = []
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -42,16 +42,38 @@ async def main():
 
         page = await context.new_page()
 
-        # Intercepta TODAS as respostas
-        page.on("response", lambda r: asyncio.create_task(handle_response(r, graphql_calls)))
+        async def on_response(response):
+            try:
+                if "application/json" in response.headers.get("content-type", ""):
+                    data = await response.json()
+                    captured.append({
+                        "url": response.url,
+                        "status": response.status,
+                        "method": response.request.method,
+                        "response": data
+                    })
+            except:
+                pass
+
+        page.on("response", on_response)
 
         for item in URLS:
             print(f"🔍 Acessando {item['label']}")
             print(item["url"])
-            await page.goto(item["url"], wait_until="networkidle")
-            await asyncio.sleep(10)  # tempo real para XHR/GraphQL
 
-        # Dump cookies reais
+            await page.goto(item["url"], wait_until="domcontentloaded")
+
+            # Aguarda botão de buscar
+            await page.wait_for_timeout(3000)
+
+            # Clica no botão "Buscar voos"
+            # (seletor robusto)
+            await page.locator("button").filter(has_text="Buscar").first.click()
+
+            # Tempo real para XHR / GraphQL
+            await page.wait_for_timeout(12000)
+
+        # Cookies reais
         cookies = await context.cookies()
         print("\n🍪 COOKIES DE SESSÃO:")
         for c in cookies:
@@ -59,45 +81,15 @@ async def main():
 
         await browser.close()
 
-    # Dump GraphQL
-    print("\n📦 GRAPHQL / XHR CAPTURADOS:")
-    if not graphql_calls:
-        print("⚠️ Nenhuma chamada GraphQL/XHR JSON capturada")
+    print("\n📦 JSON CAPTURADO:")
+    if not captured:
+        print("❌ Ainda não houve chamadas JSON")
     else:
-        for i, call in enumerate(graphql_calls, 1):
+        for i, c in enumerate(captured, 1):
             print(f"\n--- REQUEST #{i} ---")
-            print("URL:", call["url"])
-            print("STATUS:", call["status"])
-            print("METHOD:", call["method"])
-            print("HEADERS:", json.dumps(call["headers"], indent=2))
-            print("BODY:", json.dumps(call["body"], indent=2) if call["body"] else "N/A")
-            print("RESPONSE:", json.dumps(call["response"], indent=2)[:5000])
-
-async def handle_response(response, store):
-    try:
-        url = response.url.lower()
-        headers = response.request.headers
-        method = response.request.method
-
-        # Captura qualquer JSON (sem filtro)
-        if "application/json" in response.headers.get("content-type", ""):
-            try:
-                body = response.request.post_data_json
-            except:
-                body = response.request.post_data
-
-            data = await response.json()
-
-            store.append({
-                "url": response.url,
-                "status": response.status,
-                "method": method,
-                "headers": headers,
-                "body": body,
-                "response": data
-            })
-    except:
-        pass
+            print("URL:", c["url"])
+            print("STATUS:", c["status"])
+            print(json.dumps(c["response"], indent=2)[:6000])
 
 if __name__ == "__main__":
     asyncio.run(main())
